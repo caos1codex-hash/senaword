@@ -188,8 +188,8 @@ export const STREAK_MULTIPLIER = {
   10: 3,
 } as const;
 
-export const RECOGNITION_THRESHOLD = 0.7;
-export const CONFIDENCE_REQUIRED = 0.65;
+export const RECOGNITION_THRESHOLD = 0.5;
+export const CONFIDENCE_REQUIRED = 0.40;
 
 export const GAME_COLORS = {
   primary: '#0D9488',

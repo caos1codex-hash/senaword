@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ChevronLeft, ChevronRight, Eye, EyeOff, Info, RotateCcw } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Eye, EyeOff, Info, RotateCcw, ThumbsUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useGameStore } from '@/stores/game-store';
@@ -255,15 +255,37 @@ export function PracticeScreen() {
                   </div>
                 </div>
                 {practice.attempts > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => startPractice(practice.currentLetter)}
-                    className="h-9 w-9"
-                    title="Reiniciar intentos"
-                  >
-                    <RotateCcw className="w-4 h-4 text-game-text-muted" />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => startPractice(practice.currentLetter)}
+                      className="h-9 w-9"
+                      title="Reiniciar intentos"
+                    >
+                      <RotateCcw className="w-4 h-4 text-game-text-muted" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        updateLetterProgress(practice.currentLetter, true);
+                        setShowConfetti(true);
+                        confettiRef.current = true;
+                        setTimeout(() => {
+                          setShowConfetti(false);
+                          confettiRef.current = false;
+                        }, 2100);
+                        setTimeout(() => {
+                          setPracticeResult(null);
+                          nextPracticeLetter();
+                        }, 2000);
+                      }}
+                      className="h-9 gap-1.5 bg-game-success/15 border border-game-success/30 text-game-success hover:bg-game-success/25"
+                    >
+                      <ThumbsUp className="w-3.5 h-3.5" />
+                      <span className="text-xs font-medium">Lo logré</span>
+                    </Button>
+                  </div>
                 )}
               </motion.div>
             )}

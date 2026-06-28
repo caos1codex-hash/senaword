@@ -185,12 +185,13 @@ export function useHandDetection(options: UseHandDetectionOptions = {}): UseHand
           const buffer = detectionBufferRef.current;
           buffer[key] = buffer[key] || { letter: recognition.letter, confidence: 0 };
 
-          if (recognition.confidence >= confidenceThresholdRef.current * 0.8) {
-            buffer[key].confidence = Math.max(buffer[key].confidence, recognition.confidence);
+          // Accumulate: boost on high confidence, gentle decay otherwise
+          if (recognition.confidence >= confidenceThresholdRef.current * 0.5) {
+            buffer[key].confidence = Math.max(buffer[key].confidence, recognition.confidence * 1.1);
           } else {
             for (const k in buffer) {
-              buffer[k].confidence *= 0.7;
-              if (buffer[k].confidence < 0.1) delete buffer[k];
+              buffer[k].confidence *= 0.85;
+              if (buffer[k].confidence < 0.05) delete buffer[k];
             }
           }
 

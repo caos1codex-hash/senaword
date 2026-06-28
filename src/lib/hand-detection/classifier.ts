@@ -78,20 +78,41 @@ export function classifyFeatures(
     const targetMean = cache.featureMeans.get(targetLetter);
     if (targetMean) {
       const distToTarget = euclideanDistance(features, targetMean);
-      let minOtherDist = Infinity;
+
+      // Find distances to ALL other letter means, sorted
+      const otherDists: { letter: string; dist: number }[] = [];
       for (const [letter, mean] of cache.featureMeans.entries()) {
         if (letter !== targetLetter) {
-          const d = euclideanDistance(features, mean);
-          if (d < minOtherDist) minOtherDist = d;
+          otherDists.push({ letter, dist: euclideanDistance(features, mean) });
         }
       }
-      const isCorrect = distToTarget < minOtherDist;
-      const confidence = isCorrect
-        ? 1 - (distToTarget / (distToTarget + minOtherDist))
-        : 1 - (minOtherDist / (distToTarget + minOtherDist));
+      otherDists.sort((a, b) => a.dist - b.dist);
+
+      // Use 2nd-nearest mean to avoid single-outlier false negatives
+      const nearestOther = otherDists[0]?.dist ?? Infinity;
+      const secondOther = otherDists[1]?.dist ?? nearestOther;
+      const minOtherDist = (nearestOther + secondOther) / 2;
+
+      // Also check KNN vote for the target
+      const knnLetter = findNearestLetter(features, k, cache);
+      const knnAgrees = knnLetter === targetLetter;
+
+      // More generous correct check: target closer OR KNN agrees with small margin
+      const isCorrect = distToTarget < minOtherDist * 1.3 || (knnAgrees && distToTarget < nearestOther * 1.5);
+
+      // Confidence with boost when KNN agrees
+      let confidence: number;
+      if (isCorrect) {
+        confidence = 1 - (distToTarget / (distToTarget + minOtherDist));
+        if (knnAgrees) confidence = Math.min(1, confidence + 0.15);
+        // Minimum confidence floor for correct detections
+        confidence = Math.max(confidence, 0.35);
+      } else {
+        confidence = Math.max(0, 1 - (nearestOther / (distToTarget + nearestOther)));
+      }
 
       return {
-        letter: isCorrect ? targetLetter : findNearestLetter(features, k, cache),
+        letter: isCorrect ? targetLetter : knnLetter,
         confidence: Math.max(0, Math.min(1, confidence)),
         isCorrect,
         features,

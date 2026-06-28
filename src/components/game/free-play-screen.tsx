@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Shuffle, CheckCircle2, XCircle, Sparkles, Camera } from 'lucide-react';
+import { ArrowLeft, Shuffle, CheckCircle2, XCircle, Sparkles, Camera, ThumbsUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -90,6 +90,29 @@ export function FreePlayScreen() {
   const handleStartPlaying = () => {
     setShowStartOverlay(false);
   };
+
+  const handleManualCorrect = useCallback(() => {
+    if (hasProcessedRef.current) return;
+    hasProcessedRef.current = true;
+    setLastCorrect(true);
+    setLastWrong(false);
+    setDetectedCount((c) => c + 1);
+    setStreak((s) => s + 1);
+    updateLetterProgress(suggestedLetter, true);
+
+    if (!confettiRef.current) {
+      confettiRef.current = true;
+      setShowConfetti(true);
+      setTimeout(() => {
+        setShowConfetti(false);
+        confettiRef.current = false;
+      }, 2100);
+    }
+
+    advanceTimerRef.current = setTimeout(() => {
+      pickNewLetter();
+    }, 2000);
+  }, [suggestedLetter, updateLetterProgress, pickNewLetter]);
 
   return (
     <div className="flex-1 flex flex-col bg-game-bg relative">
@@ -231,6 +254,14 @@ export function FreePlayScreen() {
               >
                 <Shuffle className="w-3.5 h-3.5" />
                 <span className="text-xs font-medium hidden sm:inline">Otra letra</span>
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleManualCorrect}
+                className="h-9 gap-1.5 bg-game-success/15 border border-game-success/30 text-game-success hover:bg-game-success/25 shrink-0"
+              >
+                <ThumbsUp className="w-3.5 h-3.5" />
+                <span className="text-xs font-medium">Lo logré</span>
               </Button>
             </motion.div>
           )}
