@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { BookOpen, Camera, HelpCircle, Trophy, Flame, Gamepad2, BarChart3, Settings } from 'lucide-react';
+import { BookOpen, Camera, HelpCircle, Trophy, Flame, Gamepad2, BarChart3, Settings, Brain } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useGameStore } from '@/stores/game-store';
@@ -84,6 +84,15 @@ export function HomeScreen() {
           >
             <Camera className="w-5 h-5" />
             Jugar Libre
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            className="w-full h-14 text-lg font-bold gap-3 border-game-teal/30 text-game-teal hover:bg-game-teal/10"
+            onClick={() => { playClick(); navigate('train'); }}
+          >
+            <Brain className="w-5 h-5" />
+            Entrenar IA
           </Button>
         </motion.div>
 

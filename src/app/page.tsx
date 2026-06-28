@@ -11,6 +11,7 @@ import { ChallengeResultsScreen } from '@/components/game/challenge-results';
 import { FreePlayScreen } from '@/components/game/free-play-screen';
 import { StatsScreen } from '@/components/game/stats-screen';
 import { SettingsScreen } from '@/components/game/settings-screen';
+import { TrainScreen } from '@/components/game/train-screen';
 import { AnimatePresence, motion } from 'framer-motion';
 
 const gameModes = ['practice', 'challenge', 'free-play'] as const;
@@ -41,6 +42,7 @@ export default function Home() {
           {currentScreen === 'free-play' && <FreePlayScreen />}
           {currentScreen === 'stats' && <StatsScreen />}
           {currentScreen === 'settings' && <SettingsScreen />}
+          {currentScreen === 'train' && <TrainScreen />}
         </motion.div>
       </AnimatePresence>
 
