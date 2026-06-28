@@ -216,3 +216,45 @@ Stage Summary:
 - All sounds synthesised in-browser (no external audio files)
 - Minimal integration into 3 game components — no existing logic changed
 - Mute/unmute ready for future settings screen integration
+---
+Task ID: 8
+Agent: Main Orchestrator
+Task: Fix hand sign recognition - classifier was too strict, signs not detected
+
+Work Log:
+- Analyzed the full detection pipeline: MediaPipe → feature-extractor → classifier → buffer → camera-view → game screen
+- Identified root cause: classifier's `isCorrect` check was too strict, using only distance ratios
+- Identified secondary issue: buffer system only tracked the classifier's predicted letter, never the target letter
+- Rewrote src/lib/hand-detection/classifier.ts with multi-signal target-aware approach:
+  - Signal 1: KNN voting (5 nearest neighbors)
+  - Signal 2: Distance-to-mean ranking (is target in top-N closest?)
+  - Signal 3: Distance ratio analysis (target vs nearest other)
+  - Signal 4: Weighted Euclidean distance (per-letter std normalization)
+  - 6 progressive correctness conditions with generous thresholds
+  - When KNN agrees → always correct
+  - When target is nearest mean + ratio < 1.8 → correct
+  - When partial KNN agreement (2+ votes) + top-3 → correct
+  - And more fallback conditions
+- Rewrote src/hooks/use-hand-detection.ts buffer system:
+  - Separately tracks target letter and classifier's predicted letter
+  - Rate limiting: 1.5s cooldown between onResult callbacks (prevents flooding)
+  - Progressive confidence accumulation for correct detections
+  - Gentle decay for non-matching frames
+  - Shows real-time detected letter even below threshold for visual feedback
+- Updated src/components/game/camera-view.tsx:
+  - Live confidence bar in detection indicator
+  - Shows what letter the classifier thinks it sees when below threshold
+  - Lowered gate threshold from CONFIDENCE_REQUIRED to CONFIDENCE_REQUIRED * 0.8
+- Updated src/components/game/free-play-screen.tsx:
+  - Only shows "wrong" feedback after 8+ consecutive wrong frames (prevents flickering)
+  - Reset wrong counter on letter change and correct detection
+- Verified build succeeds: `npx next build` → 3 static pages generated
+- Committed and pushed to GitHub (commit 838f330)
+
+Stage Summary:
+- Hand recognition should now be significantly more responsive and forgiving
+- Multi-signal classifier with 6 correctness conditions vs. previous single distance-ratio check
+- Buffer system now properly tracks target letter with rate limiting
+- Visual feedback improvements: live confidence bar, detected letter preview
+- "Wrong" feedback no longer flickers constantly
+- Deployed to GitHub Pages via automatic GitHub Actions workflow
