@@ -60,7 +60,9 @@ export function CameraView({
 
   const handleResult = useCallback(
     (result: { letter: string; confidence: number; isCorrect: boolean }) => {
-      if (result.confidence >= CONFIDENCE_REQUIRED) {
+      // Pass through all results above threshold - the free-play screen
+      // handles the correct/wrong logic with its own guard
+      if (result.confidence >= CONFIDENCE_REQUIRED * 0.8) {
         onDetected?.(result.letter, result.confidence, result.isCorrect);
       }
     },
@@ -111,6 +113,9 @@ export function CameraView({
     : false;
 
   const displayError = dataError || error;
+
+  // Confidence percentage for display
+  const confidencePercent = Math.round(confidence * 100);
 
   return (
     <div
@@ -244,7 +249,7 @@ export function CameraView({
         )}
       </AnimatePresence>
 
-      {/* Detection indicator */}
+      {/* Detection indicator with live confidence */}
       {isDetecting && isModelLoaded && !displayError && handDetected && (
         <motion.div
           initial={{ scale: 0, opacity: 0 }}
@@ -256,10 +261,29 @@ export function CameraView({
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-game-success" />
           </span>
           <span className="text-xs text-game-text font-medium">Detectando</span>
+          {/* Show live confidence bar */}
+          {confidence > 0.05 && (
+            <div className="flex items-center gap-1.5 ml-1">
+              <div className="w-12 h-1.5 bg-game-border rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${Math.min(100, confidencePercent)}%`,
+                    backgroundColor: confidence >= CONFIDENCE_REQUIRED ? '#22C55E' : '#F97316',
+                  }}
+                  animate={{ width: `${Math.min(100, confidencePercent)}%` }}
+                  transition={{ duration: 0.2 }}
+                />
+              </div>
+              <span className="text-[10px] text-game-text-muted font-mono w-7 text-right">
+                {confidencePercent}%
+              </span>
+            </div>
+          )}
         </motion.div>
       )}
 
-      {/* Detected letter overlay */}
+      {/* Detected letter overlay - only when above threshold */}
       <AnimatePresence>
         {detectedLetter && confidence >= CONFIDENCE_REQUIRED && isDetecting && !displayError && (
           <motion.div
@@ -279,8 +303,23 @@ export function CameraView({
               {detectedLetter}
             </div>
             <div className="mt-2 text-sm text-game-text-secondary font-medium bg-game-bg/60 px-3 py-1 rounded-full">
-              {Math.round(confidence * 100)}%
+              {confidencePercent}%
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Show what the classifier is seeing when below threshold but above minimum */}
+      <AnimatePresence>
+        {detectedLetter && confidence > 0.05 && confidence < CONFIDENCE_REQUIRED && isDetecting && !displayError && handDetected && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute bottom-3 left-3 flex items-center gap-2 bg-game-bg/70 backdrop-blur-sm rounded-full px-3 py-1.5 z-10"
+          >
+            <span className="text-lg font-bold text-game-text-muted">{detectedLetter}</span>
+            <span className="text-[10px] text-game-text-muted">analizando...</span>
           </motion.div>
         )}
       </AnimatePresence>

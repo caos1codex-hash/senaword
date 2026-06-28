@@ -28,6 +28,8 @@ export function FreePlayScreen() {
   const hasProcessedRef = useRef(false);
   const confettiRef = useRef(false);
   const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wrongTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wrongCountRef = useRef(0);
 
   const letterInfo = LETTER_INFO[suggestedLetter];
 
@@ -40,9 +42,14 @@ export function FreePlayScreen() {
     setLastCorrect(false);
     setLastWrong(false);
     hasProcessedRef.current = false;
+    wrongCountRef.current = 0;
     if (advanceTimerRef.current) {
       clearTimeout(advanceTimerRef.current);
       advanceTimerRef.current = null;
+    }
+    if (wrongTimerRef.current) {
+      clearTimeout(wrongTimerRef.current);
+      wrongTimerRef.current = null;
     }
   }, [suggestedLetter]);
 
@@ -57,6 +64,7 @@ export function FreePlayScreen() {
         setDetectedCount((c) => c + 1);
         setStreak((s) => s + 1);
         updateLetterProgress(suggestedLetter, true);
+        wrongCountRef.current = 0;
 
         if (!confettiRef.current) {
           confettiRef.current = true;
@@ -71,10 +79,19 @@ export function FreePlayScreen() {
           pickNewLetter();
         }, 2000);
       } else {
-        setLastWrong(true);
-        setStreak(0);
-        updateLetterProgress(suggestedLetter, false);
-        setTimeout(() => setLastWrong(false), 1200);
+        // Only show wrong feedback after several consecutive wrong detections
+        // This prevents flickering wrong feedback while the user is still positioning their hand
+        wrongCountRef.current++;
+        if (wrongCountRef.current >= 8) {
+          setLastWrong(true);
+          setStreak(0);
+          updateLetterProgress(suggestedLetter, false);
+          if (wrongTimerRef.current) clearTimeout(wrongTimerRef.current);
+          wrongTimerRef.current = setTimeout(() => {
+            setLastWrong(false);
+            wrongCountRef.current = 0;
+          }, 1200);
+        }
       }
     },
     [suggestedLetter, updateLetterProgress, pickNewLetter]
@@ -84,6 +101,7 @@ export function FreePlayScreen() {
     return () => {
       setFreePlayResult(null, 0);
       if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
+      if (wrongTimerRef.current) clearTimeout(wrongTimerRef.current);
     };
   }, [setFreePlayResult]);
 
@@ -99,6 +117,7 @@ export function FreePlayScreen() {
     setDetectedCount((c) => c + 1);
     setStreak((s) => s + 1);
     updateLetterProgress(suggestedLetter, true);
+    wrongCountRef.current = 0;
 
     if (!confettiRef.current) {
       confettiRef.current = true;

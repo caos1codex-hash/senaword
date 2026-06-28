@@ -81,6 +81,6 @@ export function extractFeatures(landmarks: HandLandmark[]): number[] {
 export function isHandLandmarkValid(landmarks: HandLandmark[]): boolean {
   if (!landmarks || landmarks.length !== 21) return false;
   const wrist = landmarks[0];
-  if (wrist.x < 0 || wrist.x > 1 || wrist.y < 0 || wrist.y > 1) return false;
+  if (wrist.x < -0.5 || wrist.x > 1.5 || wrist.y < -0.5 || wrist.y > 1.5) return false;
   return true;
 }

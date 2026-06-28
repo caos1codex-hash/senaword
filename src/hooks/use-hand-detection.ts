@@ -64,13 +64,19 @@ async function loadModel(): Promise<HandLandmarkerInstance> {
   return modelLoading;
 }
 
+interface BufferEntry {
+  confidence: number;
+  correctFrames: number;
+  totalFrames: number;
+}
+
 export function useHandDetection(options: UseHandDetectionOptions = {}): UseHandDetectionReturn {
   const {
     targetLetter,
     onResult,
     onHandDetected,
     enabled = true,
-    confidenceThreshold = 0.65,
+    confidenceThreshold = 0.40,
   } = options;
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -83,7 +89,14 @@ export function useHandDetection(options: UseHandDetectionOptions = {}): UseHand
   const confidenceThresholdRef = useRef(confidenceThreshold);
   const onResultRef = useRef(onResult);
   const onHandDetectedRef = useRef(onHandDetected);
-  const detectionBufferRef = useRef<Record<string, { letter: string; confidence: number }>>({});
+
+  // Buffer tracks confidence per letter
+  const detectionBufferRef = useRef<Record<string, BufferEntry>>({});
+  // Track consecutive correct frames for the target
+  const targetCorrectFramesRef = useRef(0);
+  // Rate limiting: prevent firing onResult too frequently
+  const lastResultTimeRef = useRef(0);
+  const RESULT_COOLDOWN_MS = 1500; // Minimum 1.5s between result callbacks
 
   const [detectedLetter, setDetectedLetter] = useState<string | null>(null);
   const [confidence, setConfidence] = useState(0);
@@ -152,100 +165,156 @@ export function useHandDetection(options: UseHandDetectionOptions = {}): UseHand
   // Update the processFrame ref whenever dependencies change
   useEffect(() => {
     processFrameRef.current = () => {
-    if (!videoRef.current || !handLandmarkerInstance || !isDetectingRef.current) return;
+      if (!videoRef.current || !handLandmarkerInstance || !isDetectingRef.current) return;
 
-    const video = videoRef.current;
-    if (video.readyState < 2) {
-      animationFrameRef.current = requestAnimationFrame(() => processFrameRef.current());
-      return;
-    }
-
-    if (video.currentTime === lastVideoTimeRef.current) {
-      animationFrameRef.current = requestAnimationFrame(() => processFrameRef.current());
-      return;
-    }
-    lastVideoTimeRef.current = video.currentTime;
-
-    try {
-      const results = handLandmarkerInstance.detectForVideo(video, performance.now());
-
-      if (results.landmarks && results.landmarks.length > 0) {
-        const landmarks = results.landmarks[0] as HandLandmark[];
-        setHandDetected(true);
-
-        if (canvasRef.current) {
-          drawHandLandmarks(landmarks, canvasRef.current, video);
-        }
-
-        if (isHandLandmarkValid(landmarks)) {
-          const features = extractFeatures(landmarks);
-          const recognition = classifyFeatures(features, 5, targetLetterRef.current);
-
-          const key = recognition.letter;
-          const buffer = detectionBufferRef.current;
-          buffer[key] = buffer[key] || { letter: recognition.letter, confidence: 0 };
-
-          // Accumulate: boost on high confidence, gentle decay otherwise
-          if (recognition.confidence >= confidenceThresholdRef.current * 0.5) {
-            buffer[key].confidence = Math.max(buffer[key].confidence, recognition.confidence * 1.1);
-          } else {
-            for (const k in buffer) {
-              buffer[k].confidence *= 0.85;
-              if (buffer[k].confidence < 0.05) delete buffer[k];
-            }
-          }
-
-          let bestLetter = '';
-          let bestConf = 0;
-          for (const k in buffer) {
-            if (buffer[k].confidence > bestConf) {
-              bestConf = buffer[k].confidence;
-              bestLetter = k;
-            }
-          }
-
-          if (bestConf >= confidenceThresholdRef.current && bestLetter) {
-            setDetectedLetter(bestLetter);
-            setConfidence(bestConf);
-            const finalResult: RecognitionResult = {
-              ...recognition,
-              letter: bestLetter,
-              confidence: bestConf,
-              isCorrect: targetLetterRef.current ? bestLetter === targetLetterRef.current : false,
-            };
-            setLatestResult(finalResult);
-            onResultRef.current?.(finalResult);
-          } else {
-            setDetectedLetter(null);
-            setConfidence(0);
-            setLatestResult(null);
-          }
-
-          onHandDetectedRef.current?.({
-            landmarks,
-            handedness: results.handednesses?.[0]?.categoryName?.toLowerCase() === 'left' ? 'left' : 'right',
-            features,
-          });
-        }
-      } else {
-        setHandDetected(false);
-        setDetectedLetter(null);
-        setConfidence(0);
-        setLatestResult(null);
-        if (canvasRef.current) {
-          const ctx = canvasRef.current.getContext('2d');
-          if (ctx) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-        }
-        for (const k in detectionBufferRef.current) {
-          detectionBufferRef.current[k].confidence *= 0.5;
-          if (detectionBufferRef.current[k].confidence < 0.1) delete detectionBufferRef.current[k];
-        }
+      const video = videoRef.current;
+      if (video.readyState < 2) {
+        animationFrameRef.current = requestAnimationFrame(() => processFrameRef.current());
+        return;
       }
-    } catch (err) {
-      console.error('Hand detection error:', err);
-    }
 
-    animationFrameRef.current = requestAnimationFrame(() => processFrameRef.current());
+      if (video.currentTime === lastVideoTimeRef.current) {
+        animationFrameRef.current = requestAnimationFrame(() => processFrameRef.current());
+        return;
+      }
+      lastVideoTimeRef.current = video.currentTime;
+
+      try {
+        const results = handLandmarkerInstance.detectForVideo(video, performance.now());
+
+        if (results.landmarks && results.landmarks.length > 0) {
+          const landmarks = results.landmarks[0] as HandLandmark[];
+          setHandDetected(true);
+
+          if (canvasRef.current) {
+            drawHandLandmarks(landmarks, canvasRef.current, video);
+          }
+
+          if (isHandLandmarkValid(landmarks)) {
+            const features = extractFeatures(landmarks);
+            const recognition = classifyFeatures(features, 5, targetLetterRef.current);
+
+            const buffer = detectionBufferRef.current;
+            const target = targetLetterRef.current;
+            const threshold = confidenceThresholdRef.current;
+
+            // === BUFFER UPDATE LOGIC ===
+            // Track BOTH the classifier's output AND the target letter separately
+
+            // 1. Update the classifier's predicted letter in the buffer
+            const predKey = recognition.letter;
+            if (!buffer[predKey]) {
+              buffer[predKey] = { confidence: 0, correctFrames: 0, totalFrames: 0 };
+            }
+            buffer[predKey].totalFrames++;
+
+            if (recognition.isCorrect && recognition.confidence > 0.3) {
+              // Classifier says it's the target - strong boost
+              buffer[predKey].confidence = Math.min(1, buffer[predKey].confidence + 0.12);
+              buffer[predKey].correctFrames++;
+            } else if (recognition.confidence > 0) {
+              // Some confidence but not correct - smaller boost
+              buffer[predKey].confidence = Math.max(buffer[predKey].confidence, recognition.confidence * 0.6);
+            }
+
+            // 2. If we have a target, also track it separately in the buffer
+            // This ensures the target letter can accumulate even when classifier
+            // returns a different letter (due to the generous multi-signal check)
+            if (target && recognition.isCorrect && predKey === target) {
+              // Classifier agrees with target - this is already handled above
+              targetCorrectFramesRef.current++;
+            } else if (target && !recognition.isCorrect) {
+              // Classifier disagrees - but still check if target is "close enough"
+              // If classifier gives any confidence to target (even as second-best),
+              // give the target a small buffer boost
+              if (!buffer[target]) {
+                buffer[target] = { confidence: 0, correctFrames: 0, totalFrames: 0 };
+              }
+              // Very gentle accumulation for the target when classifier says no
+              // This helps when the classifier oscillates between correct and incorrect
+              buffer[target].confidence *= 0.95; // Gentle decay
+              targetCorrectFramesRef.current = Math.max(0, targetCorrectFramesRef.current - 1);
+            }
+
+            // 3. Decay all buffer entries gently
+            for (const k in buffer) {
+              if (k !== predKey && k !== target) {
+                buffer[k].confidence *= 0.90;
+                if (buffer[k].confidence < 0.02) delete buffer[k];
+              }
+            }
+
+            // 4. Find the best letter from the buffer
+            let bestLetter = '';
+            let bestConf = 0;
+            for (const k in buffer) {
+              if (buffer[k].confidence > bestConf) {
+                bestConf = buffer[k].confidence;
+                bestLetter = k;
+              }
+            }
+
+            // 5. Determine if we should emit a result
+            const now = performance.now();
+            const cooldownPassed = now - lastResultTimeRef.current > RESULT_COOLDOWN_MS;
+
+            if (bestConf >= threshold && bestLetter && cooldownPassed) {
+              const isCorrectResult = target ? bestLetter === target : false;
+
+              setDetectedLetter(bestLetter);
+              setConfidence(bestConf);
+
+              const finalResult: RecognitionResult = {
+                ...recognition,
+                letter: bestLetter,
+                confidence: bestConf,
+                isCorrect: isCorrectResult,
+              };
+              setLatestResult(finalResult);
+
+              // Only call onResult if cooldown has passed (rate limiting)
+              if (cooldownPassed) {
+                lastResultTimeRef.current = now;
+                onResultRef.current?.(finalResult);
+              }
+            } else {
+              // Below threshold - still update UI with best guess for visual feedback
+              if (bestLetter && bestConf > 0.1) {
+                setDetectedLetter(bestLetter);
+                setConfidence(bestConf);
+              } else {
+                setDetectedLetter(null);
+                setConfidence(0);
+              }
+              setLatestResult(null);
+            }
+
+            onHandDetectedRef.current?.({
+              landmarks,
+              handedness: results.handednesses?.[0]?.categoryName?.toLowerCase() === 'left' ? 'left' : 'right',
+              features,
+            });
+          }
+        } else {
+          setHandDetected(false);
+          setDetectedLetter(null);
+          setConfidence(0);
+          setLatestResult(null);
+          if (canvasRef.current) {
+            const ctx = canvasRef.current.getContext('2d');
+            if (ctx) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+          }
+          for (const k in detectionBufferRef.current) {
+            detectionBufferRef.current[k].confidence *= 0.5;
+            if (detectionBufferRef.current[k].confidence < 0.05) delete detectionBufferRef.current[k];
+          }
+          targetCorrectFramesRef.current = 0;
+        }
+      } catch (err) {
+        console.error('Hand detection error:', err);
+      }
+
+      animationFrameRef.current = requestAnimationFrame(() => processFrameRef.current());
     };
   }, [drawHandLandmarks]);
 
@@ -278,6 +347,8 @@ export function useHandDetection(options: UseHandDetectionOptions = {}): UseHand
 
       detectionBufferRef.current = {};
       lastVideoTimeRef.current = -1;
+      targetCorrectFramesRef.current = 0;
+      lastResultTimeRef.current = 0;
 
       setIsDetecting(true);
       animationFrameRef.current = requestAnimationFrame(() => processFrameRef.current());
