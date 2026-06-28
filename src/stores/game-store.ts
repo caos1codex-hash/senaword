@@ -223,16 +223,16 @@ export const useGameStore = create<GameStore>()(
       endChallenge: () => {
         const state = get();
         const challenge = state.challenge;
-        if (challenge) {
-          state.incrementGamesPlayed();
-          state.addPoints(challenge.score.points);
-          state.incrementCorrectSigns();
-          state.incrementSignsAttempted();
-          if (challenge.score.bestStreak > state.bestStreak) {
-            state.updateBestStreak(challenge.score.bestStreak);
-          }
-        }
-        set({ challenge: null, currentScreen: 'challenge-results' });
+        if (!challenge) return;
+        set({
+          challenge: { ...challenge, isComplete: true },
+          currentScreen: 'challenge-results',
+          totalGamesPlayed: state.totalGamesPlayed + 1,
+          totalPoints: state.totalPoints + challenge.score.points,
+          totalCorrectSigns: state.totalCorrectSigns + challenge.score.correct,
+          totalSignsAttempted: state.totalSignsAttempted + challenge.score.total,
+          bestStreak: Math.max(state.bestStreak, challenge.score.bestStreak),
+        });
       },
 
       // Free Play

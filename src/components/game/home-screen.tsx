@@ -1,11 +1,12 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { BookOpen, Camera, HelpCircle, Trophy, Flame, Gamepad2 } from 'lucide-react';
+import { BookOpen, Camera, HelpCircle, Trophy, Flame, Gamepad2, BarChart3, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useGameStore } from '@/stores/game-store';
 import { AVAILABLE_LETTERS } from '@/constants/letters';
+import { useSoundEffects } from '@/hooks/use-sound-effects';
 
 const container = {
   hidden: { opacity: 0 },
@@ -25,9 +26,22 @@ export function HomeScreen() {
   const learnedCount = useGameStore((s) => s.getLearnedCount());
   const totalPoints = useGameStore((s) => s.totalPoints);
   const totalGamesPlayed = useGameStore((s) => s.totalGamesPlayed);
+  const { playClick } = useSoundEffects();
 
   return (
-    <main className="flex-1 flex flex-col items-center justify-center px-4 py-8 bg-mesh">
+    <main className="flex-1 flex flex-col items-center justify-center px-4 py-8 bg-mesh relative">
+      {/* Settings button */}
+      <motion.div variants={item} className="absolute top-4 right-4">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-game-text-muted hover:text-game-text-secondary hover:bg-game-card/50"
+          onClick={() => { playClick(); navigate('settings'); }}
+        >
+          <Settings className="w-5 h-5" />
+        </Button>
+      </motion.div>
+
       <motion.div
         variants={container}
         initial="hidden"
@@ -57,7 +71,7 @@ export function HomeScreen() {
           <Button
             size="lg"
             className="w-full h-14 text-lg font-bold gap-3 bg-game-teal hover:bg-game-teal-dark text-white shadow-lg shadow-game-teal/20"
-            onClick={() => navigate('mode-select')}
+            onClick={() => { playClick(); navigate('mode-select'); }}
           >
             <BookOpen className="w-5 h-5" />
             Aprender
@@ -66,7 +80,7 @@ export function HomeScreen() {
             size="lg"
             variant="outline"
             className="w-full h-14 text-lg font-bold gap-3 border-game-orange/40 text-game-orange hover:bg-game-orange/10 hover:text-game-orange-light"
-            onClick={() => navigate('free-play')}
+            onClick={() => { playClick(); navigate('free-play'); }}
           >
             <Camera className="w-5 h-5" />
             Jugar Libre
@@ -76,7 +90,7 @@ export function HomeScreen() {
         {/* How to play link */}
         <motion.div variants={item}>
           <button
-            onClick={() => navigate('how-to-play')}
+            onClick={() => { playClick(); navigate('how-to-play'); }}
             className="flex items-center gap-1.5 text-game-text-muted hover:text-game-text-secondary transition-colors text-sm font-medium py-2 px-3"
           >
             <HelpCircle className="w-4 h-4" />
@@ -87,7 +101,7 @@ export function HomeScreen() {
         {/* Stats bar */}
         <motion.div variants={item} className="w-full mt-2">
           <Separator className="bg-game-border mb-4" />
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="flex flex-col items-center gap-1 py-2">
               <div className="flex items-center gap-1.5 text-game-teal">
                 <Trophy className="w-4 h-4" />
@@ -120,6 +134,18 @@ export function HomeScreen() {
                 Jugadas
               </span>
             </div>
+            <button
+              onClick={() => { playClick(); navigate('stats'); }}
+              className="flex flex-col items-center gap-1 py-2 rounded-lg hover:bg-game-card/50 transition-colors"
+            >
+              <div className="flex items-center gap-1.5 text-game-teal-light">
+                <BarChart3 className="w-4 h-4" />
+              </div>
+              <span className="text-xs text-game-text-muted">ver más</span>
+              <span className="text-xs text-game-text-secondary font-medium">
+                Estadísticas
+              </span>
+            </button>
           </div>
         </motion.div>
       </motion.div>

@@ -9,10 +9,16 @@ import { PracticeScreen } from '@/components/game/practice-screen';
 import { ChallengeScreen } from '@/components/game/challenge-screen';
 import { ChallengeResultsScreen } from '@/components/game/challenge-results';
 import { FreePlayScreen } from '@/components/game/free-play-screen';
+import { StatsScreen } from '@/components/game/stats-screen';
+import { SettingsScreen } from '@/components/game/settings-screen';
 import { AnimatePresence, motion } from 'framer-motion';
+
+const gameModes = ['practice', 'challenge', 'free-play'] as const;
 
 export default function Home() {
   const currentScreen = useGameStore((s) => s.currentScreen);
+
+  const showFooter = !gameModes.includes(currentScreen as typeof gameModes[number]);
 
   return (
     <div className="min-h-screen flex flex-col bg-game-bg">
@@ -33,8 +39,16 @@ export default function Home() {
           {currentScreen === 'challenge' && <ChallengeScreen />}
           {currentScreen === 'challenge-results' && <ChallengeResultsScreen />}
           {currentScreen === 'free-play' && <FreePlayScreen />}
+          {currentScreen === 'stats' && <StatsScreen />}
+          {currentScreen === 'settings' && <SettingsScreen />}
         </motion.div>
       </AnimatePresence>
+
+      {showFooter && (
+        <footer className="mt-auto bg-game-card border-t border-game-border text-game-text-muted text-center text-xs py-3 px-4">
+          MÍMICA © 2025 · Aprende Lengua de Señas
+        </footer>
+      )}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import { useGameStore } from '@/stores/game-store';
 import { POINTS_PER_CORRECT, STREAK_MULTIPLIER } from '@/constants/letters';
 import { CameraView } from './camera-view';
 import { ConfettiEffect } from './confetti-effect';
+import { useSoundEffects } from '@/hooks/use-sound-effects';
 import type { Difficulty } from '@/types/game';
 
 /* ─── Main Challenge Screen ─── */
@@ -19,6 +20,7 @@ export function ChallengeScreen() {
   const nextChallengeLetter = useGameStore((s) => s.nextChallengeLetter);
   const pauseChallenge = useGameStore((s) => s.pauseChallenge);
   const resumeChallenge = useGameStore((s) => s.resumeChallenge);
+  const endChallenge = useGameStore((s) => s.endChallenge);
   const navigate = useGameStore((s) => s.navigate);
   const updateLetterProgress = useGameStore((s) => s.updateLetterProgress);
 
@@ -29,23 +31,7 @@ export function ChallengeScreen() {
   const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasProcessedRef = useRef(false);
 
-  // Persist stats and mark challenge complete (without nulling challenge data)
-  const finishChallenge = useCallback(() => {
-    const st = useGameStore.getState();
-    if (st.challenge) {
-      st.incrementGamesPlayed();
-      st.addPoints(st.challenge.score.points);
-      st.incrementCorrectSigns();
-      st.incrementSignsAttempted();
-      if (st.challenge.score.bestStreak > st.bestStreak) {
-        st.updateBestStreak(st.challenge.score.bestStreak);
-      }
-      useGameStore.setState({
-        challenge: { ...st.challenge, isComplete: true },
-        currentScreen: 'challenge-results',
-      });
-    }
-  }, []);
+  const { playCorrect, playWrong } = useSoundEffects();
 
   // If no challenge, navigate back
   useEffect(() => {
@@ -70,6 +56,7 @@ export function ChallengeScreen() {
       updateLetterProgress(challenge.currentLetter, isCorrectDetected);
 
       if (isCorrectDetected) {
+        playCorrect();
         const newStreak = challenge.score.streak + 1;
         const basePoints = POINTS_PER_CORRECT[challenge.config.difficulty as Difficulty];
         let multiplier = 1;
@@ -88,6 +75,7 @@ export function ChallengeScreen() {
           nextChallengeLetter();
         }, 1000);
       } else {
+        playWrong();
         setShakeWrong(true);
         setTimeout(() => setShakeWrong(false), 500);
 
@@ -97,7 +85,7 @@ export function ChallengeScreen() {
         }, 1000);
       }
     },
-    [challenge, updateChallengeScore, nextChallengeLetter, updateLetterProgress]
+    [challenge, updateChallengeScore, nextChallengeLetter, updateLetterProgress, playCorrect, playWrong]
   );
 
   if (!challenge) return null;
@@ -125,7 +113,7 @@ export function ChallengeScreen() {
             <TimerBar
               timeLimit={challenge.config.timeLimit}
               isPaused={challenge.isPaused}
-              onTimeUp={finishChallenge}
+              onTimeUp={endChallenge}
             />
           </div>
           <Button
@@ -241,7 +229,7 @@ export function ChallengeScreen() {
               size="lg"
               variant="outline"
               className="h-12 font-bold gap-2 border-game-error/40 text-game-error hover:bg-game-error/10"
-              onClick={finishChallenge}
+              onClick={endChallenge}
             >
               <X className="w-4 h-4" />
               Terminar

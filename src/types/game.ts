@@ -8,7 +8,9 @@ export type GameScreen =
   | 'challenge'
   | 'free-play'
   | 'challenge-results'
-  | 'how-to-play';
+  | 'how-to-play'
+  | 'stats'
+  | 'settings';
 
 export type GameMode = 'practice' | 'challenge' | 'free-play';
 

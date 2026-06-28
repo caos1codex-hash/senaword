@@ -12,11 +12,19 @@ interface TrainingDataFormat {
 let _trainingData: TrainingDataFormat | null = null;
 let _loading: Promise<TrainingDataFormat> | null = null;
 
+function getBasePath(): string {
+  if (typeof window === 'undefined') return '';
+  const segments = window.location.pathname.split('/').filter(Boolean);
+  if (segments[0] === 'senaword') return '/senaword';
+  return '';
+}
+
 async function loadTrainingData(): Promise<TrainingDataFormat> {
   if (_trainingData) return _trainingData;
   if (_loading) return _loading;
 
-  _loading = fetch('/data/senaword-training.json')
+  const base = getBasePath();
+  _loading = fetch(`${base}/data/senaword-training.json`)
     .then((res) => res.json())
     .then((data: TrainingDataFormat) => {
       _trainingData = data;

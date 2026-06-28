@@ -9,6 +9,7 @@ import { useGameStore } from '@/stores/game-store';
 import { LETTER_INFO, AVAILABLE_LETTERS } from '@/constants/letters';
 import { CameraView } from './camera-view';
 import { ConfettiEffect } from './confetti-effect';
+import { useSoundEffects } from '@/hooks/use-sound-effects';
 
 export function PracticeScreen() {
   const practice = useGameStore((s) => s.practice);
@@ -19,6 +20,8 @@ export function PracticeScreen() {
   const nextPracticeLetter = useGameStore((s) => s.nextPracticeLetter);
   const prevPracticeLetter = useGameStore((s) => s.prevPracticeLetter);
   const startPractice = useGameStore((s) => s.startPractice);
+
+  const { playCorrect, playWrong } = useSoundEffects();
 
   const [showConfetti, setShowConfetti] = useState(false);
   const confettiRef = useRef(false);
@@ -37,6 +40,7 @@ export function PracticeScreen() {
 
       if (isCorrectDetected) {
         updateLetterProgress(practice.currentLetter, true);
+        playCorrect();
 
         // Trigger confetti
         if (!confettiRef.current) {
@@ -55,9 +59,10 @@ export function PracticeScreen() {
         }, 2000);
       } else {
         updateLetterProgress(practice.currentLetter, false);
+        playWrong();
       }
     },
-    [practice.currentLetter, practice.lastResult, setPracticeResult, updateLetterProgress, nextPracticeLetter]
+    [practice.currentLetter, practice.lastResult, setPracticeResult, updateLetterProgress, nextPracticeLetter, playCorrect, playWrong]
   );
 
   // Clean up timer on unmount
