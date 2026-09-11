@@ -2,12 +2,14 @@
 
 import { useEffect, useCallback, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, CameraOff, Loader2, AlertCircle, RotateCcw, Video } from 'lucide-react';
+import { Camera, CameraOff, AlertCircle, RotateCcw, Video, Hand } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useHandDetection } from '@/hooks/use-hand-detection';
-import { initializeTrainingData, getAllExamples } from '@/data/training-data';
+import { useGameStore } from '@/stores/game-store';
+import { initializeTrainingData, getMergedExamples } from '@/data/training-data';
 import { initializeClassifier } from '@/lib/hand-detection/classifier';
-import { CONFIDENCE_REQUIRED } from '@/constants/letters';
+import { handLabel } from '@/lib/hand-detection/handedness';
+import { CONFIDENCE_REQUIRED, isDynamicLetter } from '@/constants/letters';
 
 interface CameraViewProps {
   targetLetter?: string;
@@ -16,12 +18,14 @@ interface CameraViewProps {
   showOverlay?: boolean;
   size?: 'sm' | 'md' | 'lg' | 'full';
   enabled?: boolean;
+  /** Override modo video (true) / foto (false). Si no se pasa, default J/Ñ/Z. */
+  forceDynamic?: boolean;
 }
 
 const sizeClasses: Record<string, string> = {
-  sm: 'w-full max-w-xs aspect-[4/3]',
-  md: 'w-full max-w-md aspect-[4/3]',
-  lg: 'w-full max-w-lg aspect-[4/3]',
+  sm: 'w-full max-w-sm aspect-video mx-auto',
+  md: 'w-full max-w-3xl aspect-video mx-auto',
+  lg: 'w-full max-w-4xl aspect-video mx-auto',
   full: 'w-full aspect-video',
 };
 
@@ -32,12 +36,25 @@ export function CameraView({
   showOverlay = true,
   size = 'md',
   enabled = true,
+  forceDynamic,
 }: CameraViewProps) {
   const [dataReady, setDataReady] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
+  const [dataRetry, setDataRetry] = useState(0);
   const hasAutoStarted = useRef(false);
+  const preferredHand = useGameStore((s) => s.preferredHand);
 
-  // Initialize training data and classifier on mount
+  const mirrorVideoRef = useCallback((el: HTMLVideoElement | null) => {
+    const src = videoRef.current?.srcObject;
+    if (el && src && el.srcObject !== src) {
+      el.muted = true;
+      el.srcObject = src;
+      el.play().catch(() => {
+        setTimeout(() => { el.play().catch(() => {}); }, 600);
+      });
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -45,23 +62,26 @@ export function CameraView({
       try {
         await initializeTrainingData();
         if (cancelled) return;
-        const examples = getAllExamples();
+        const examples = getMergedExamples();
         initializeClassifier(examples);
-        if (!cancelled) setDataReady(true);
+        if (!cancelled) {
+          setDataError(null);
+          setDataReady(true);
+        }
       } catch (err) {
         console.error('Failed to load training data:', err);
-        if (!cancelled) setDataError('Error al cargar los datos de entrenamiento.');
+        if (!cancelled) {
+          setDataError(err instanceof Error ? err.message : 'Error al cargar los datos de entrenamiento.');
+        }
       }
     }
 
     init();
     return () => { cancelled = true; };
-  }, []);
+  }, [dataRetry]);
 
   const handleResult = useCallback(
     (result: { letter: string; confidence: number; isCorrect: boolean }) => {
-      // Pass through all results above threshold - the free-play screen
-      // handles the correct/wrong logic with its own guard
       if (result.confidence >= CONFIDENCE_REQUIRED * 0.8) {
         onDetected?.(result.letter, result.confidence, result.isCorrect);
       }
@@ -80,20 +100,24 @@ export function CameraView({
     startDetection,
     stopDetection,
     handDetected,
+    motionProgress,
+    isDynamicTarget,
+    handMismatch,
+    mismatchSide,
   } = useHandDetection({
     targetLetter,
     onResult: handleResult,
     confidenceThreshold: CONFIDENCE_REQUIRED,
+    forceDynamic,
+    preferredHand,
   });
 
-  // Auto-start when data is ready and enabled (via user gesture simulation)
   const handleStartClick = useCallback(() => {
     if (dataReady && enabled) {
       void startDetection();
     }
   }, [dataReady, enabled, startDetection]);
 
-  // Auto-start effect: trigger start once when data becomes ready
   useEffect(() => {
     if (autoStart && dataReady && enabled && !hasAutoStarted.current && !isDetecting) {
       hasAutoStarted.current = true;
@@ -101,27 +125,34 @@ export function CameraView({
     }
   }, [autoStart, dataReady, enabled, isDetecting, startDetection]);
 
-  // Stop detection when disabled
   useEffect(() => {
     if (!enabled && isDetecting) {
       stopDetection();
     }
+    if (!enabled) {
+      hasAutoStarted.current = false;
+    }
   }, [enabled, isDetecting, stopDetection]);
 
+  useEffect(() => {
+    if (enabled && dataReady && !isDetecting && hasAutoStarted.current) {
+      hasAutoStarted.current = false;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetLetter]);
+
   const showCorrectGlow = targetLetter
-    ? detectedLetter === targetLetter && confidence >= CONFIDENCE_REQUIRED
+    ? detectedLetter === targetLetter && confidence >= CONFIDENCE_REQUIRED && showOverlay
     : false;
 
   const displayError = dataError || error;
-
-  // Confidence percentage for display
   const confidencePercent = Math.round(confidence * 100);
 
   return (
     <div
-      className={`relative rounded-xl overflow-hidden bg-game-card border border-game-border ${sizeClasses[size]}`}
+      className={`relative overflow-hidden glass-regular squircle-lg depth-2 ${sizeClasses[size]}`}
     >
-      {/* Hidden video element for MediaPipe processing */}
+      {/* Hidden video for MediaPipe */}
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover opacity-0 pointer-events-none"
@@ -129,15 +160,9 @@ export function CameraView({
         muted
       />
 
-      {/* Visible mirrored video feed */}
       {isDetecting && isModelLoaded && !displayError && (
         <video
-          ref={(el) => {
-            if (el && videoRef.current && videoRef.current.srcObject) {
-              el.srcObject = videoRef.current.srcObject;
-              el.play().catch(() => {});
-            }
-          }}
+          ref={mirrorVideoRef}
           className="absolute inset-0 w-full h-full object-cover camera-mirror"
           playsInline
           muted
@@ -145,7 +170,6 @@ export function CameraView({
         />
       )}
 
-      {/* Canvas overlay showing hand landmarks */}
       {isDetecting && isModelLoaded && !displayError && (
         <canvas
           ref={canvasRef}
@@ -153,185 +177,222 @@ export function CameraView({
         />
       )}
 
-      {/* Loading data state */}
+      {/* Cinematic vignette */}
+      <div aria-hidden="true" className="absolute inset-0 pointer-events-none bg-gradient-to-t from-black/35 via-transparent to-black/20" />
+
+      {/* Loading */}
       <AnimatePresence>
         {!dataReady && !dataError && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 flex flex-col items-center justify-center bg-game-card gap-3 p-4"
+            className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 bg-[#0B1220]/95"
           >
             <div className="relative">
-              <div className="w-16 h-16 rounded-full border-4 border-game-teal/30 border-t-game-teal animate-spin" />
-              <Camera className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 text-game-teal" />
+              <div className="w-16 h-16 rounded-full border-4 border-teal-300/20 border-t-teal-300 animate-spin" />
+              <Camera className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 text-teal-200" aria-hidden="true" />
             </div>
-            <p className="text-game-text-secondary text-sm text-center">
-              Cargando datos de IA...
-            </p>
-            <p className="text-game-text-muted text-xs text-center">
-              Preparando el reconocimiento de señas
-            </p>
+            <p className="text-white/80 text-sm font-semibold">Cargando datos de IA...</p>
+            <p className="text-white/40 text-xs">Preparando el reconocimiento de señas</p>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Ready - Show start button or loading model */}
+      {/* Start */}
       <AnimatePresence>
         {dataReady && !isModelLoaded && !displayError && !isDetecting && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            initial={{ opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 flex flex-col items-center justify-center bg-game-card gap-3 p-4"
+            transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+            className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 bg-[#0B1220]/92"
           >
-            <Button
-              onClick={handleStartClick}
-              size="lg"
-              className="gap-2 bg-game-teal hover:bg-game-teal-dark"
-            >
-              <Video className="w-5 h-5" />
-              Iniciar Cámara
-            </Button>
-            <p className="text-game-text-muted text-xs text-center">
-              Se necesita acceso a la cámara
-            </p>
+            <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>
+              <Button
+                onClick={handleStartClick}
+                size="lg"
+                className="btn-premium btn-premium-teal gap-2 text-white rounded-2xl border-0 h-12 px-6 font-bold"
+              >
+                <Video className="w-5 h-5" aria-hidden="true" />
+                Iniciar Cámara
+              </Button>
+            </motion.div>
+            <p className="text-white/40 text-xs">Se necesita acceso a la cámara</p>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Error state */}
+      {/* Error */}
       <AnimatePresence>
         {displayError && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="absolute inset-0 flex flex-col items-center justify-center bg-game-card gap-3 p-4"
+            className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 bg-[#0B1220]/96"
           >
-            <AlertCircle className="w-10 h-10 text-game-error" />
-            <p className="text-game-text-secondary text-sm text-center max-w-[240px]">
-              {displayError}
-            </p>
+            <span className="w-12 h-12 rounded-2xl bg-rose-400/15 border border-rose-300/25 flex items-center justify-center">
+              <AlertCircle className="w-6 h-6 text-rose-300" aria-hidden="true" />
+            </span>
+            <p className="text-white/70 text-sm text-center max-w-[260px]">{displayError}</p>
             <Button
               variant="outline"
               size="sm"
               onClick={() => {
-                stopDetection();
-                setTimeout(() => startDetection(), 300);
+                if (dataError) {
+                  setDataError(null);
+                  setDataRetry((n) => n + 1);
+                } else {
+                  stopDetection();
+                  setTimeout(() => startDetection(), 300);
+                }
               }}
-              className="gap-2"
+              className="gap-2 rounded-xl border-white/15 bg-white/5 hover:bg-white/10"
             >
-              <RotateCcw className="w-4 h-4" />
+              <RotateCcw className="w-4 h-4" aria-hidden="true" />
               Reintentar
             </Button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Active camera - no hand detected message */}
+      {/* No hand pill */}
       <AnimatePresence>
         {isDetecting && isModelLoaded && !displayError && !handDetected && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 flex flex-col items-center justify-center bg-game-bg/50 backdrop-blur-sm"
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/60 border border-white/10 rounded-full px-4 py-1.5 z-10"
           >
-            <CameraOff className="w-12 h-12 text-game-text-muted mb-3" />
-            <p className="text-game-text-secondary text-sm font-medium">
-              No se detecta mano
-            </p>
-            <p className="text-game-text-muted text-xs mt-1">
-              Muestra tu mano a la cámara
+            <CameraOff className="w-4 h-4 text-white/50!" aria-hidden="true" />
+            <p className="text-xs text-white/70! font-medium whitespace-nowrap">
+              No se detecta mano · usa buena luz
             </p>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Detection indicator with live confidence */}
-      {isDetecting && isModelLoaded && !displayError && handDetected && (
+      {/* Wrong-hand hint: se ve una mano pero no es la elegida */}
+      <AnimatePresence>
+        {isDetecting && isModelLoaded && !displayError && handMismatch && preferredHand !== 'any' && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/60 border border-white/10 rounded-full px-4 py-1.5 z-10"
+          >
+            <Hand className="w-4 h-4 text-white/70!" aria-hidden="true" />
+            <p className="text-xs text-white! font-medium whitespace-nowrap">
+              Esa es la {mismatchSide ? handLabel(mismatchSide) : ''} · muestra tu mano {handLabel(preferredHand as 'left' | 'right')}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Live detection pill */}
+      {isDetecting && isModelLoaded && !displayError && handDetected && !handMismatch && (
         <motion.div
-          initial={{ scale: 0, opacity: 0 }}
+          initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
-          className="absolute top-3 right-3 flex items-center gap-2 bg-game-bg/70 backdrop-blur-sm rounded-full px-3 py-1.5 z-10"
+          className="absolute top-3 right-3 flex items-center gap-2 bg-black/60 border border-white/10 rounded-full px-3 py-1.5 z-10"
         >
           <span className="relative flex h-2.5 w-2.5">
-            <span className="detection-pulse absolute inline-flex h-full w-full rounded-full bg-game-success opacity-75" />
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-game-success" />
+            <span className="detection-pulse absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400" />
           </span>
-          <span className="text-xs text-game-text font-medium">Detectando</span>
-          {/* Show live confidence bar */}
+          <span className="text-xs text-white! font-semibold">
+            {isDynamicTarget ? 'Detectando movimiento' : 'Detectando'}
+          </span>
           {confidence > 0.05 && (
-            <div className="flex items-center gap-1.5 ml-1">
-              <div className="w-12 h-1.5 bg-game-border rounded-full overflow-hidden">
-                <motion.div
-                  className="h-full rounded-full"
+            <span className="flex items-center gap-1.5 ml-1">
+              <span className="w-12 h-1.5 bg-white/15 rounded-full overflow-hidden">
+                {/* Plain div: animating width with framer-motion here restarted
+                    the animation every render (~11/s) and janked the video. */}
+                <span
+                  className="block h-full rounded-full"
                   style={{
                     width: `${Math.min(100, confidencePercent)}%`,
-                    backgroundColor: confidence >= CONFIDENCE_REQUIRED ? '#22C55E' : '#F97316',
+                    background: confidence >= CONFIDENCE_REQUIRED ? '#34D399' : '#FB923C',
                   }}
-                  animate={{ width: `${Math.min(100, confidencePercent)}%` }}
-                  transition={{ duration: 0.2 }}
                 />
-              </div>
-              <span className="text-[10px] text-game-text-muted font-mono w-7 text-right">
+              </span>
+              <span className="text-[10px] text-white/50! font-mono w-7 text-right tabular-nums">
                 {confidencePercent}%
               </span>
-            </div>
+            </span>
           )}
         </motion.div>
       )}
 
-      {/* Detected letter overlay - only when above threshold */}
+      {/* Big letter */}
       <AnimatePresence>
-        {detectedLetter && confidence >= CONFIDENCE_REQUIRED && isDetecting && !displayError && (
+        {showOverlay && detectedLetter && confidence >= CONFIDENCE_REQUIRED && isDetecting && !displayError && (
           <motion.div
-            initial={{ scale: 0.5, opacity: 0 }}
+            initial={{ scale: 0.6, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.5, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-            className={`absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 ${
-              showCorrectGlow ? 'glow-success' : ''
-            }`}
+            exit={{ scale: 0.6, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 22 }}
+            className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10"
           >
-            <div
-              className={`text-6xl sm:text-7xl font-black tracking-wider drop-shadow-lg ${
-                showCorrectGlow ? 'text-game-success' : 'text-game-orange'
+            <span
+              className={`text-7xl font-black tracking-tighter drop-shadow-2xl ${
+                showCorrectGlow ? 'text-emerald-300' : 'text-orange-200'
               }`}
             >
               {detectedLetter}
-            </div>
-            <div className="mt-2 text-sm text-game-text-secondary font-medium bg-game-bg/60 px-3 py-1 rounded-full">
+            </span>
+            <span className="mt-2 text-xs font-bold text-white/80! bg-black/70 px-3 py-1 rounded-full border border-white/10 tabular-nums">
               {confidencePercent}%
-            </div>
+            </span>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Show what the classifier is seeing when below threshold but above minimum */}
       <AnimatePresence>
-        {detectedLetter && confidence > 0.05 && confidence < CONFIDENCE_REQUIRED && isDetecting && !displayError && handDetected && (
+        {showOverlay && detectedLetter && confidence > 0.05 && confidence < CONFIDENCE_REQUIRED && isDetecting && !displayError && handDetected && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute bottom-3 left-3 flex items-center gap-2 bg-game-bg/70 backdrop-blur-sm rounded-full px-3 py-1.5 z-10"
+            className="absolute bottom-3 left-3 flex items-center gap-2 bg-black/60 border border-white/10 rounded-full px-3 py-1.5 z-10"
           >
-            <span className="text-lg font-bold text-game-text-muted">{detectedLetter}</span>
-            <span className="text-[10px] text-game-text-muted">analizando...</span>
+            <span className="text-lg font-extrabold text-white/60!">{detectedLetter}</span>
+            <span className="text-[10px] text-white/40!">
+              {isDynamicTarget ? 'haz el movimiento...' : 'analizando...'}
+            </span>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Success glow border effect */}
+      {/* Barra de movimiento para J/Ñ/Z */}
+      {isDetecting && isModelLoaded && !displayError && handDetected && isDynamicTarget && targetLetter && isDynamicLetter(targetLetter) && (
+        <div className="absolute bottom-3 right-3 flex items-center gap-2 bg-black/60 border border-white/10 rounded-full px-3 py-1.5 z-10">
+          <span className="text-[10px] text-white/50! font-bold uppercase tracking-wider">Trazo</span>
+          <span className="w-16 h-1.5 bg-white/15 rounded-full overflow-hidden">
+            <span
+              className="block h-full rounded-full transition-all duration-200"
+              style={{
+                width: `${Math.round(motionProgress * 100)}%`,
+                background: motionProgress > 0.6 ? '#34D399' : '#FB923C',
+              }}
+            />
+          </span>
+          <span className="text-[10px] text-white/50! font-mono w-8 text-right tabular-nums">
+            {Math.round(motionProgress * 100)}%
+          </span>
+        </div>
+      )}
+
       <AnimatePresence>
         {showCorrectGlow && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="absolute inset-0 rounded-xl border-2 border-game-success pointer-events-none z-20"
+            className="absolute inset-0 rounded-[1.75rem] border-2 border-emerald-300/80 pointer-events-none z-20"
           />
         )}
       </AnimatePresence>

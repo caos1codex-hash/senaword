@@ -12,24 +12,23 @@ import { FreePlayScreen } from '@/components/game/free-play-screen';
 import { StatsScreen } from '@/components/game/stats-screen';
 import { SettingsScreen } from '@/components/game/settings-screen';
 import { TrainScreen } from '@/components/game/train-screen';
+import { ThemeScreen } from '@/components/game/theme-screen';
+import { ThemeEffect } from '@/components/game/theme-effect';
 import { AnimatePresence, motion } from 'framer-motion';
-
-const gameModes = ['practice', 'challenge', 'free-play'] as const;
 
 export default function Home() {
   const currentScreen = useGameStore((s) => s.currentScreen);
 
-  const showFooter = !gameModes.includes(currentScreen as typeof gameModes[number]);
-
   return (
-    <div className="min-h-screen flex flex-col bg-game-bg">
+    <div className="aaa-stage min-h-screen flex flex-col">
+      <ThemeEffect />
       <AnimatePresence mode="wait">
         <motion.div
           key={currentScreen}
-          initial={{ opacity: 0, x: 10 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -10 }}
-          transition={{ duration: 0.2, ease: 'easeInOut' }}
+          initial={{ opacity: 0, y: 14, scale: 0.99 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -10, scale: 0.99 }}
+          transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
           className="flex-1 flex flex-col"
         >
           {currentScreen === 'home' && <HomeScreen />}
@@ -43,14 +42,9 @@ export default function Home() {
           {currentScreen === 'stats' && <StatsScreen />}
           {currentScreen === 'settings' && <SettingsScreen />}
           {currentScreen === 'train' && <TrainScreen />}
+          {currentScreen === 'themes' && <ThemeScreen />}
         </motion.div>
       </AnimatePresence>
-
-      {showFooter && (
-        <footer className="mt-auto bg-game-card border-t border-game-border text-game-text-muted text-center text-xs py-3 px-4">
-          MÍMICA © 2025 · Aprende Lengua de Señas
-        </footer>
-      )}
     </div>
   );
 }

@@ -4,12 +4,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, ChevronLeft, ChevronRight, Eye, EyeOff, Info, RotateCcw, ThumbsUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { useGameStore } from '@/stores/game-store';
-import { LETTER_INFO, AVAILABLE_LETTERS } from '@/constants/letters';
 import { CameraView } from './camera-view';
 import { ConfettiEffect } from './confetti-effect';
 import { useSoundEffects } from '@/hooks/use-sound-effects';
+import { isDynamicLetter } from '@/constants/letters';
 
 export function PracticeScreen() {
   const practice = useGameStore((s) => s.practice);
@@ -20,29 +19,30 @@ export function PracticeScreen() {
   const nextPracticeLetter = useGameStore((s) => s.nextPracticeLetter);
   const prevPracticeLetter = useGameStore((s) => s.prevPracticeLetter);
   const startPractice = useGameStore((s) => s.startPractice);
+  const getLetterData = useGameStore((s) => s.getLetterData);
+  const getCaptureMode = useGameStore((s) => s.getCaptureMode);
 
   const { playCorrect, playWrong } = useSoundEffects();
 
   const [showConfetti, setShowConfetti] = useState(false);
   const confettiRef = useRef(false);
   const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastWrongRef = useRef(0);
 
-  const letterInfo = LETTER_INFO[practice.currentLetter];
+  const letterInfo = getLetterData(practice.currentLetter);
   const isCorrect = practice.lastResult?.isCorrect ?? false;
   const hasResult = practice.lastResult !== null;
+  const needsMotion = getCaptureMode(practice.currentLetter) === 'video';
 
   const handleDetected = useCallback(
     (letter: string, confidence: number, isCorrectDetected: boolean) => {
-      // Only process if we haven't already shown a result
       if (practice.lastResult?.isCorrect) return;
 
-      setPracticeResult({ letter, confidence, isCorrect: isCorrectDetected });
-
       if (isCorrectDetected) {
+        setPracticeResult({ letter, confidence, isCorrect: isCorrectDetected });
         updateLetterProgress(practice.currentLetter, true);
         playCorrect();
 
-        // Trigger confetti
         if (!confettiRef.current) {
           confettiRef.current = true;
           setShowConfetti(true);
@@ -52,12 +52,15 @@ export function PracticeScreen() {
           }, 2100);
         }
 
-        // Auto-advance after 2s
         advanceTimerRef.current = setTimeout(() => {
           setPracticeResult(null);
           nextPracticeLetter();
         }, 2000);
       } else {
+        const now = Date.now();
+        if (now - lastWrongRef.current < 2000) return;
+        lastWrongRef.current = now;
+        setPracticeResult({ letter, confidence, isCorrect: false });
         updateLetterProgress(practice.currentLetter, false);
         playWrong();
       }
@@ -65,14 +68,12 @@ export function PracticeScreen() {
     [practice.currentLetter, practice.lastResult, setPracticeResult, updateLetterProgress, nextPracticeLetter, playCorrect, playWrong]
   );
 
-  // Clean up timer on unmount
   useEffect(() => {
     return () => {
       if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
     };
   }, []);
 
-  // Reset result when letter changes
   useEffect(() => {
     setPracticeResult(null);
     confettiRef.current = false;
@@ -82,33 +83,49 @@ export function PracticeScreen() {
     }
   }, [practice.currentLetter, setPracticeResult]);
 
+  const triggerManualCorrect = () => {
+    updateLetterProgress(practice.currentLetter, true);
+    setPracticeResult({ letter: practice.currentLetter, confidence: 1, isCorrect: true });
+    setShowConfetti(true);
+    confettiRef.current = true;
+    setTimeout(() => {
+      setShowConfetti(false);
+      confettiRef.current = false;
+    }, 2100);
+    advanceTimerRef.current = setTimeout(() => {
+      setPracticeResult(null);
+      nextPracticeLetter();
+    }, 2000);
+  };
+
   return (
-    <div className="flex-1 flex flex-col bg-game-bg relative">
+    <div className="aaa-stage flex-1 flex flex-col min-h-0">
       <ConfettiEffect active={showConfetti} />
 
-      {/* Top Bar */}
+      {/* Floating toolbar */}
       <motion.div
-        initial={{ opacity: 0, y: -10 }}
+        initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between px-3 py-3 border-b border-game-border bg-game-card/80 backdrop-blur-sm"
+        transition={{ duration: 0.45, ease: [0.32, 0.72, 0, 1] }}
+        className="mx-3 mt-3 glass-regular glass-highlight squircle depth-1 flex items-center justify-between px-2 py-2"
       >
-        <Button variant="ghost" size="icon" onClick={goBack} className="h-10 w-10">
+        <Button variant="ghost" size="icon" onClick={goBack} className="h-11 w-11 rounded-2xl hover:bg-white/5" aria-label="Volver">
           <ArrowLeft className="w-5 h-5" />
         </Button>
 
-        {/* Letter navigation */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <Button
             variant="ghost"
             size="icon"
             onClick={prevPracticeLetter}
-            className="h-9 w-9"
-            disabled={hasResult}
+            className="h-10 w-10 rounded-2xl hover:bg-white/5"
+            disabled={isCorrect}
+            aria-label="Letra anterior"
           >
-            <ChevronLeft className="w-4 h-4" />
+            <ChevronLeft className="w-5 h-5" />
           </Button>
-          <div className="w-10 text-center">
-            <span className="text-lg font-bold text-game-teal">
+          <div className="min-w-12 text-center px-3 py-1.5 rounded-2xl bg-teal-400/10 border border-teal-300/20">
+            <span className="text-lg font-extrabold text-teal-100 tabular-nums">
               {practice.currentLetter}
             </span>
           </div>
@@ -116,10 +133,11 @@ export function PracticeScreen() {
             variant="ghost"
             size="icon"
             onClick={nextPracticeLetter}
-            className="h-9 w-9"
-            disabled={hasResult}
+            className="h-10 w-10 rounded-2xl hover:bg-white/5"
+            disabled={isCorrect}
+            aria-label="Letra siguiente"
           >
-            <ChevronRight className="w-4 h-4" />
+            <ChevronRight className="w-5 h-5" />
           </Button>
         </div>
 
@@ -127,31 +145,42 @@ export function PracticeScreen() {
           variant="ghost"
           size="icon"
           onClick={toggleReference}
-          className="h-10 w-10"
+          className="h-11 w-11 rounded-2xl hover:bg-white/5"
           title={practice.showReference ? 'Ocultar referencia' : 'Mostrar referencia'}
+          aria-label={practice.showReference ? 'Ocultar referencia' : 'Mostrar referencia'}
         >
-          {practice.showReference ? (
-            <EyeOff className="w-4 h-4" />
-          ) : (
-            <Eye className="w-4 h-4" />
-          )}
+          {practice.showReference ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
         </Button>
       </motion.div>
 
-      {/* Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Target letter + Reference */}
-        <div className="px-4 pt-4 pb-2 flex-shrink-0">
+        {/* Hero letter */}
+        <div className="px-4 pt-4 pb-2 flex-shrink-0 text-center">
           <motion.div
             key={practice.currentLetter}
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-            className="text-center mb-2"
+            initial={{ scale: 0.85, opacity: 0, y: 10 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 24 }}
           >
-            <span className="text-8xl font-black gradient-text">
+            <span className="text-7xl sm:text-8xl font-black tracking-tighter gradient-text leading-none">
               {practice.currentLetter}
             </span>
+            {isDynamicLetter(practice.currentLetter) && (
+              <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-orange-400/10 border border-orange-300/25 px-3 py-1">
+                <span className="text-xs" aria-hidden="true">〰️</span>
+                <span className="text-[11px] font-bold text-orange-200 uppercase tracking-wider">
+                  Con movimiento · mantén la seña y haz el trazo (~2s)
+                </span>
+              </div>
+            )}
+            {!isDynamicLetter(practice.currentLetter) && needsMotion && (
+              <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-orange-400/10 border border-orange-300/25 px-3 py-1">
+                <span className="text-xs" aria-hidden="true">🎥</span>
+                <span className="text-[11px] font-bold text-orange-200 uppercase tracking-wider">
+                  Modo video · haz el movimiento entrenado (~2s)
+                </span>
+              </div>
+            )}
           </motion.div>
 
           <AnimatePresence>
@@ -160,130 +189,130 @@ export function PracticeScreen() {
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.25 }}
+                transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
                 className="overflow-hidden"
               >
-                <Card className="bg-game-card/80 border-game-border mb-2">
-                  <CardContent className="p-3 space-y-2">
-                    <p className="text-sm text-game-text-secondary leading-relaxed">
-                      {letterInfo.description}
+                <div className="glass-thin glass-highlight squircle-sm mt-3 p-4 text-left depth-1 max-w-2xl mx-auto">
+                  <p className="text-sm text-white/85 leading-relaxed font-medium">
+                    {letterInfo.description}
+                  </p>
+                  {letterInfo.movement && (
+                    <p className="text-xs text-orange-200/90 leading-relaxed mt-1.5 font-semibold">
+                      Movimiento: {letterInfo.movement}
                     </p>
-                    <div className="flex items-start gap-2">
-                      <Info className="w-4 h-4 text-game-orange mt-0.5 flex-shrink-0" />
-                      <p className="text-xs text-game-text-muted leading-relaxed">
-                        {letterInfo.tip}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
+                  )}
+                  <div className="flex items-start gap-2 mt-2">
+                    <Info className="w-4 h-4 text-orange-300 mt-0.5 flex-shrink-0" aria-hidden="true" />
+                    <p className="text-xs text-white/50 leading-relaxed">{letterInfo.tip}</p>
+                  </div>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        {/* Camera View - takes remaining space */}
         <div className="flex-1 flex items-center justify-center px-4 pb-2 min-h-0">
           <CameraView
             targetLetter={practice.currentLetter}
             onDetected={handleDetected}
-            size="full"
+            size="md"
             enabled={!isCorrect}
             showOverlay
+            forceDynamic={needsMotion}
           />
         </div>
 
-        {/* Bottom feedback panel */}
-        <div className="px-4 pb-4 pt-2 flex-shrink-0">
+        {/* Bottom dock */}
+        <div className="px-4 pb-4 pt-2 flex-shrink-0 max-w-3xl mx-auto w-full">
           <AnimatePresence mode="wait">
             {isCorrect ? (
               <motion.div
                 key="correct"
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
+                initial={{ y: 20, opacity: 0, scale: 0.97 }}
+                animate={{ y: 0, opacity: 1, scale: 1 }}
                 exit={{ y: 20, opacity: 0 }}
-                className="rounded-2xl bg-game-success/10 border border-game-success/30 p-4 text-center glow-success"
+                transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
+                className="rounded-[1.6rem] bg-emerald-400/10 border border-emerald-300/25 p-4 text-center depth-1"
               >
-                <motion.div
-                  initial={{ scale: 0.5 }}
-                  animate={{ scale: 1 }}
-                  className="text-2xl font-black text-game-success success-burst"
-                >
+                <motion.div initial={{ scale: 0.6 }} animate={{ scale: 1 }} className="text-2xl font-black text-emerald-300 success-burst">
                   ¡Correcto!
                 </motion.div>
-                <p className="text-sm text-game-success/80 mt-1">
-                  Avanzando a la siguiente letra...
-                </p>
+                <p className="text-sm text-emerald-200/70 mt-1">Avanzando a la siguiente letra...</p>
               </motion.div>
             ) : hasResult && practice.lastResult ? (
               <motion.div
                 key="wrong"
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
+                initial={{ y: 20, opacity: 0, scale: 0.97 }}
+                animate={{ y: 0, opacity: 1, scale: 1 }}
                 exit={{ y: 20, opacity: 0 }}
-                className="rounded-2xl bg-game-error/10 border border-game-error/30 p-4 text-center"
+                className="rounded-[1.6rem] bg-rose-400/10 border border-rose-300/25 p-4 text-center depth-1"
               >
-                <p className="text-base font-bold text-game-error">
-                  Intenta de nuevo
+                <p className="text-base font-extrabold text-rose-200">Intenta de nuevo</p>
+                <p className="text-xs text-white/50 mt-1">
+                  Se detectó: <span className="font-bold text-white/80">{practice.lastResult.letter}</span>
                 </p>
-                <p className="text-xs text-game-text-muted mt-1">
-                  Se detectó: <span className="font-bold text-game-text-secondary">{practice.lastResult.letter}</span>
-                </p>
+                <div className="flex items-center justify-center gap-2 mt-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setPracticeResult(null)}
+                    className="h-9 rounded-xl text-xs text-white/60 hover:text-white hover:bg-white/5"
+                  >
+                    Seguir intentando
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={triggerManualCorrect}
+                    className="h-9 rounded-xl gap-1.5 bg-emerald-400/15 border border-emerald-300/30 text-emerald-200 hover:bg-emerald-400/25"
+                  >
+                    <ThumbsUp className="w-3.5 h-3.5" aria-hidden="true" />
+                    <span className="text-xs font-bold">Lo logré</span>
+                  </Button>
+                </div>
               </motion.div>
             ) : (
               <motion.div
                 key="instruction"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className="flex items-center justify-between rounded-2xl bg-game-card border border-game-border p-4"
+                className="glass-regular glass-highlight squircle flex items-center justify-between p-4 depth-1"
               >
                 <div className="flex items-center gap-3">
                   <motion.div
-                    animate={{ scale: [1, 1.1, 1] }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                    className="w-10 h-10 rounded-xl bg-game-teal/10 flex items-center justify-center"
+                    animate={{ scale: [1, 1.08, 1] }}
+                    transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+                    className="w-11 h-11 rounded-2xl bg-teal-400/15 border border-teal-300/20 flex items-center justify-center"
                   >
-                    <span className="text-xl">✋</span>
+                    <span className="text-xl" aria-hidden="true">✋</span>
                   </motion.div>
                   <div>
-                    <p className="text-sm font-semibold text-game-text">
-                      Muestra la seña
-                    </p>
-                    <p className="text-xs text-game-text-muted">
-                      Letra: {practice.currentLetter} · Intento #{practice.attempts + 1}
+                    <p className="text-sm font-bold text-white">Muestra la seña</p>
+                    <p className="text-xs text-white/50 tabular-nums">
+                      Letra: {practice.currentLetter}
+                      {isDynamicLetter(practice.currentLetter) ? ' · haz el trazo completo' : ''} · Intento #{practice.attempts + 1}
                     </p>
                   </div>
                 </div>
                 {practice.attempts > 0 && (
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => startPractice(practice.currentLetter)}
-                      className="h-9 w-9"
+                      className="h-10 w-10 rounded-2xl hover:bg-white/5"
                       title="Reiniciar intentos"
+                      aria-label="Reiniciar intentos"
                     >
-                      <RotateCcw className="w-4 h-4 text-game-text-muted" />
+                      <RotateCcw className="w-4 h-4 text-white/50" />
                     </Button>
                     <Button
                       size="sm"
-                      onClick={() => {
-                        updateLetterProgress(practice.currentLetter, true);
-                        setShowConfetti(true);
-                        confettiRef.current = true;
-                        setTimeout(() => {
-                          setShowConfetti(false);
-                          confettiRef.current = false;
-                        }, 2100);
-                        setTimeout(() => {
-                          setPracticeResult(null);
-                          nextPracticeLetter();
-                        }, 2000);
-                      }}
-                      className="h-9 gap-1.5 bg-game-success/15 border border-game-success/30 text-game-success hover:bg-game-success/25"
+                      onClick={triggerManualCorrect}
+                      className="h-10 rounded-2xl gap-1.5 bg-emerald-400/15 border border-emerald-300/30 text-emerald-200 hover:bg-emerald-400/25 font-bold"
                     >
-                      <ThumbsUp className="w-3.5 h-3.5" />
-                      <span className="text-xs font-medium">Lo logré</span>
+                      <ThumbsUp className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span className="text-xs">Lo logré</span>
                     </Button>
                   </div>
                 )}

@@ -13,9 +13,21 @@ let enabled = true;
 
 function getContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
-  if (ctx) return ctx;
+  if (ctx) {
+    // Chrome crea el contexto en 'suspended' hasta un gesto del usuario.
+    // Sin resume(), el primer playClick no suena.
+    if (ctx.state === 'suspended') {
+      void ctx.resume().catch(() => {});
+    }
+    return ctx;
+  }
   try {
-    ctx = new AudioContext();
+    const AC = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AC) return null;
+    ctx = new AC();
+    if (ctx.state === 'suspended') {
+      void ctx.resume().catch(() => {});
+    }
     return ctx;
   } catch {
     return null;
@@ -45,21 +57,25 @@ function playTone(
 
   const now = audioCtx.currentTime;
 
-  const osc = audioCtx.createOscillator();
-  const gainNode = audioCtx.createGain();
+  try {
+    const osc = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
 
-  osc.type = wave;
-  osc.frequency.setValueAtTime(frequency, now);
+    osc.type = wave;
+    osc.frequency.setValueAtTime(frequency, now);
 
-  gainNode.gain.setValueAtTime(0.001, now);
-  gainNode.gain.exponentialRampToValueAtTime(gain, now + attack);
-  gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    gainNode.gain.setValueAtTime(0.001, now);
+    gainNode.gain.exponentialRampToValueAtTime(gain, now + attack);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
-  osc.connect(gainNode);
-  gainNode.connect(audioCtx.destination);
+    osc.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
 
-  osc.start(now);
-  osc.stop(now + duration);
+    osc.start(now);
+    osc.stop(now + duration);
+  } catch {
+    // Contexto cerrado / hardware ocupado: degradar a silencio sin romper el juego
+  }
 }
 
 function playArpeggio(
@@ -83,26 +99,30 @@ function playArpeggio(
 
   const now = audioCtx.currentTime;
 
-  frequencies.forEach((freq, i) => {
-    const start = now + i * noteDuration * 0.85; // slight overlap for legato feel
-    const end = start + noteDuration;
+  try {
+    frequencies.forEach((freq, i) => {
+      const start = now + i * noteDuration * 0.85; // slight overlap for legato feel
+      const end = start + noteDuration;
 
-    const osc = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
+      const osc = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
 
-    osc.type = wave;
-    osc.frequency.setValueAtTime(freq, start);
+      osc.type = wave;
+      osc.frequency.setValueAtTime(freq, start);
 
-    gainNode.gain.setValueAtTime(0.001, start);
-    gainNode.gain.exponentialRampToValueAtTime(gain, start + attack);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, end);
+      gainNode.gain.setValueAtTime(0.001, start);
+      gainNode.gain.exponentialRampToValueAtTime(gain, start + attack);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, end);
 
-    osc.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
+      osc.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
 
-    osc.start(start);
-    osc.stop(end + 0.01);
-  });
+      osc.start(start);
+      osc.stop(end + 0.01);
+    });
+  } catch {
+    // Degradar a silencio sin romper handlers del juego
+  }
 }
 
 // ─── Note frequencies (Hz) ─────────────────────────────────────────────

@@ -27,7 +27,7 @@ export const metadata: Metadata = {
     "accesibilidad",
     "sign language",
   ],
-  authors: [{ name: "SenaWord" }],
+  authors: [{ name: "Seña Word" }],
   icons: {
     icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤟</text></svg>",
   },

@@ -1,12 +1,35 @@
 import type { LetterData, Difficulty, ChallengeConfig } from '@/types/game';
 
 export const AVAILABLE_LETTERS = [
-  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K',
-  'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U',
-  'V', 'W', 'X', 'Y',
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
+  'K', 'L', 'M', 'N', 'Ñ', 'O', 'P', 'Q', 'R', 'S',
+  'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
 ] as const;
 
 export type AvailableLetter = (typeof AVAILABLE_LETTERS)[number];
+
+/**
+ * Letras dinámicas del español: requieren movimiento además de la forma.
+ * - J: trazo curvo en forma de gancho/J
+ * - Ñ: vaivén lateral ondulado (base N + movimiento)
+ * - Z: zigzag con el índice
+ * El resto son estáticas (una sola postura).
+ */
+export const DYNAMIC_LETTERS = ['J', 'Ñ', 'Z'] as const;
+
+export type DynamicLetter = (typeof DYNAMIC_LETTERS)[number];
+
+export function isDynamicLetter(letter: string): boolean {
+  return (DYNAMIC_LETTERS as readonly string[]).includes(letter);
+}
+
+/** Ventana temporal para analizar movimiento (ms + nº de puntos). */
+export const MOTION_CONFIG = {
+  windowMs: 2200,
+  minPoints: 8,
+  minPathLength: 0.12,
+  minDisplacement: 0.06,
+} as const;
 
 export const LETTER_INFO: Record<string, Omit<LetterData, 'learned' | 'practiceCount' | 'successCount'>> = {
   A: {
@@ -63,6 +86,14 @@ export const LETTER_INFO: Record<string, Omit<LetterData, 'learned' | 'practiceC
     handshape: 'pinky-up',
     tip: 'Cierra todos los dedos excepto el meñique, que apunta hacia arriba.',
   },
+  J: {
+    letter: 'J',
+    description: 'Como la I pero dibujando una J en el aire con el meñique',
+    handshape: 'pinky-hook-trace',
+    tip: 'Extiende el meñique como en la I y traza una J: baja y curva al final.',
+    dynamic: true,
+    movement: 'Trazo en forma de J: baja vertical y curva a un lado. Dura ~2 segundos.',
+  },
   K: {
     letter: 'K',
     description: 'Índice y medio en V, pulgar entre medio',
@@ -86,6 +117,14 @@ export const LETTER_INFO: Record<string, Omit<LetterData, 'learned' | 'practiceC
     description: 'Dos dedos sobre el pulgar doblado',
     handshape: 'two-over-thumb',
     tip: 'Coloca índice y medio doblados sobre el pulgar.',
+  },
+  'Ñ': {
+    letter: 'Ñ',
+    description: 'Como la N pero con vaivén lateral (movimiento ondulado)',
+    handshape: 'two-over-thumb-wiggle',
+    tip: 'Forma la N y mueve la mano de lado a lado dos veces, corto y suave.',
+    dynamic: true,
+    movement: 'Vaivén lateral: 2 oscilaciones cortas de lado a lado (~2 segundos).',
   },
   O: {
     letter: 'O',
@@ -121,7 +160,7 @@ export const LETTER_INFO: Record<string, Omit<LetterData, 'learned' | 'practiceC
     letter: 'T',
     description: 'Pulgar entre índice y medio',
     handshape: 'thumb-between-fingers',
-    tip: 'Meté el pulgar entre el índice y el medio doblados.',
+    tip: 'Coloca el pulgar entre el índice y el medio doblados.',
   },
   U: {
     letter: 'U',
@@ -152,6 +191,14 @@ export const LETTER_INFO: Record<string, Omit<LetterData, 'learned' | 'practiceC
     description: 'Pulgar y meñique extendidos',
     handshape: 'thumb-pinky-out',
     tip: 'Extiende el pulgar y el meñique, cierra los demás.',
+  },
+  Z: {
+    letter: 'Z',
+    description: 'Dibuja una Z en el aire con el índice extendido',
+    handshape: 'index-zigzag',
+    tip: 'Extiende solo el índice y traza: línea horizontal, diagonal y horizontal.',
+    dynamic: true,
+    movement: 'Zigzag en forma de Z: ➡︎, ⬋ diagonal, ➡︎. Dura ~2 segundos.',
   },
 };
 
