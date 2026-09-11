@@ -38,6 +38,17 @@ if exist "!APP!\package.json" (
     goto :instalar
 )
 
+if exist "!ZIP!" (
+    for %%F in ("!ZIP!") do set "ZSIZE=%%~zF"
+    if !ZSIZE! GTR 400000000 (
+        echo  [1/2] ZIP ya descargado completo. Pasando a descomprimir...
+        echo.
+        goto :extraer
+    )
+    echo  El ZIP anterior quedo incompleto. Descargando de nuevo...
+    del /f /q "!ZIP!" >nul 2>&1
+)
+
 echo  [1/2] Descargando SENAWORD (~474 MB, solo la primera vez)...
 echo        Destino: !BASE!
 echo.
@@ -59,12 +70,14 @@ if !errorlevel! neq 0 (
     exit /b 1
 )
 
-echo.
-echo  Descomprimiendo (puede tardar 5-15 minutos: son miles de
-echo  archivos pequenos y el antivirus revisa cada uno).
-echo  NO cierres esta ventana. Puedes abrir la carpeta SENAWORD
-echo  en otra ventana para ver como crece mientras trabaja.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '!ZIP!' -DestinationPath '!BASE!' -Force"
+:extraer
+echo  Descomprimiendo con extraccion rapida (1-4 minutos, no la cierres)...
+where tar.exe >nul 2>nul
+if !errorlevel! equ 0 (
+    tar.exe -xf "!ZIP!" -C "!BASE!"
+) else (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '!ZIP!' -DestinationPath '!BASE!' -Force"
+)
 if !errorlevel! neq 0 (
     echo.
     echo  ERROR: No se pudo descomprimir el ZIP.
