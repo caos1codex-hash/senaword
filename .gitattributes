@@ -1,0 +1,3 @@
+# Los .bat de Windows EXIGEN finales CRLF: con solo LF, cmd.exe
+# ejecuta fragmentos de los comentarios como comandos.
+*.bat text eol=crlf
