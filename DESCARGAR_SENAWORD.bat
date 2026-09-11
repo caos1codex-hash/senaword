@@ -60,7 +60,10 @@ if !errorlevel! neq 0 (
 )
 
 echo.
-echo  Descomprimiendo (tarda 1-3 minutos)...
+echo  Descomprimiendo (puede tardar 5-15 minutos: son miles de
+echo  archivos pequenos y el antivirus revisa cada uno).
+echo  NO cierres esta ventana. Puedes abrir la carpeta SENAWORD
+echo  en otra ventana para ver como crece mientras trabaja.
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '!ZIP!' -DestinationPath '!BASE!' -Force"
 if !errorlevel! neq 0 (
     echo.
